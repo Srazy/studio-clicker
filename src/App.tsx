@@ -6,7 +6,6 @@ import { AccelerationButton } from './components/AccelerationButton';
 import type { FloatingTextItem, ComboTier, EmployeeType, EmployeeInfo, PerkInfo } from './types';
 import { sounds } from './utils/audio';
 
-const COMBO_TIMEOUT = 1200; // ms to reset combo
 const MONEY_DROP_INTERVAL = 30000; // 30 seconds (half a minute)
 const ACCEL_DECAY_RATE = 2; // % per second
 const MAX_ACCEL = 100;
@@ -24,12 +23,12 @@ const EMPLOYEES: EmployeeInfo[] = [
   { type: 'developer', label: 'Разработчик', baseCost: 100, description: 'Пишет больше строк за клик.', icon: '👨‍💻' },
   { type: 'analyst', label: 'Аналитик', baseCost: 250, description: 'Увеличивает доход с продукта.', icon: '📊' },
   { type: 'backend', label: 'Бэкендер', baseCost: 500, description: 'Стабилизирует ускорение.', icon: '⚙️' },
-  { type: 'manager', label: 'Менеджер', baseCost: 1000, description: 'Автоматически пишет код.', icon: '👔' },
+  { type: 'manager', label: 'Менеджер', baseCost: 1000, description: 'Автоматически ускоряет.', icon: '👔' },
 ];
 
 const PERKS: PerkInfo[] = [
   { id: 'diploma', label: 'Почетная грамота', baseCost: 1500, description: 'Множитель строк x1.5 навсегда.', icon: '📜' },
-  { id: 'thanks', label: 'Бесплатное "Спасибо"', baseCost: 0, description: 'Ничего не стоит, но поднимает мораль.', icon: '🙏', free: true },
+  { id: 'thanks', label: 'Бесплатное "Спасибо"', baseCost: 0, description: 'Ничего не стоит, но поднимает мораль. (нет)', icon: '🙏', free: true },
   { id: 'pizza', label: 'Пицца для команды', baseCost: 500, description: 'Удваивает строки на 30 секунд.', icon: '🍕' },
   { id: 'energy', label: 'Энергетик', baseCost: 300, description: 'Мгновенный рывок ускорения (+35%).', icon: '⚡' },
   { id: 'cookies', label: 'Печеньки в офисе', baseCost: 200, description: 'Увеличивает доход аналитиков.', icon: '🍪' },
@@ -46,6 +45,7 @@ export default function App() {
   const [floatingItems, setFloatingItems] = useState<FloatingTextItem[]>([]);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [activeShop, setActiveShop] = useState<'staff' | 'perks'>('staff');
+  const [isShopOpen, setIsShopOpen] = useState(window.innerWidth > 1024);
 
   const [employees, setEmployees] = useState<Record<EmployeeType, number>>({
     developer: 0,
@@ -59,7 +59,154 @@ export default function App() {
   const [cookiesBoost, setCookiesBoost] = useState(false);
   const [sysadminActive, setSysadminActive] = useState(false);
 
+  type ActiveEvent = 'call' | 'jira' | 'release' | null;
+  const [activeEvent, setActiveEvent] = useState<ActiveEvent>(null);
+  const [isCallTalking, setIsCallTalking] = useState(false);
+  const [jiraOffset, setJiraOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingJira, setIsDraggingJira] = useState(false);
+  const [jiraDragStart, setJiraDragStart] = useState({ x: 0, y: 0 });
+  const [releaseCode, setReleaseCode] = useState('1.2.ar.1');
+  const [userReleaseInput, setUserReleaseInput] = useState('');
+
+  const handleAnswerCall = () => {
+    setIsCallTalking(true);
+    if ('speechSynthesis' in window && isAudioEnabled) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance('Добрый день коллеги! Надо немного ускориться! Всем хорошего дня!');
+      utterance.lang = 'ru-RU';
+      utterance.rate = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+    if (isAudioEnabled) sounds.playComboUp(4);
+
+    setTimeout(() => {
+      setIsCallTalking(false);
+      setActiveEvent(null);
+    }, 2800);
+  };
+
+  const handleDeployRelease = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (userReleaseInput.trim().toLowerCase() === releaseCode.trim().toLowerCase()) {
+      setActiveEvent(null);
+      setUserReleaseInput('');
+      if (isAudioEnabled) sounds.playComboUp(5);
+      const id = Date.now();
+      setLinesOfCode(prev => prev + 500);
+      setFloatingItems(prev => [...prev, {
+        id, text: '🚀 РЕЛИЗ УСПЕШНО СОБРАН! (+500 строк)', x: window.innerWidth / 2, y: window.innerHeight / 2 - 80,
+        scale: 1.4, color: '#00f0ff', type: 'point'
+      }]);
+      setTimeout(() => setFloatingItems(prev => prev.filter(i => i.id !== id)), 2000);
+    } else {
+      if (isAudioEnabled) sounds.playDrop();
+      const id = Date.now();
+      setFloatingItems(prev => [...prev, {
+        id, text: '❌ НЕВЕРНЫЙ КОД РЕЛИЗА!', x: window.innerWidth / 2, y: window.innerHeight / 2 - 80,
+        scale: 1.2, color: '#ef4444', type: 'point'
+      }]);
+      setTimeout(() => setFloatingItems(prev => prev.filter(i => i.id !== id)), 1500);
+    }
+  };
+
+  // Random event spawner timer
+  useEffect(() => {
+    const eventInterval = setInterval(() => {
+      if (!activeEvent && Math.random() < 0.45) {
+        const types: ActiveEvent[] = ['call', 'jira', 'release'];
+        const eventType = types[Math.floor(Math.random() * types.length)];
+        setActiveEvent(eventType);
+        setJiraOffset({ x: 0, y: 0 });
+
+        if (eventType === 'release') {
+          const major = Math.floor(Math.random() * 3) + 1;
+          const minor = Math.floor(Math.random() * 9);
+          const suffix = ['ar', 'rc', 'beta', 'patch'][Math.floor(Math.random() * 4)];
+          const patch = Math.floor(Math.random() * 9) + 1;
+          setReleaseCode(`${major}.${minor}.${suffix}.${patch}`);
+          setUserReleaseInput('');
+        }
+
+        if (eventType === 'call' && isAudioEnabled) {
+          sounds.playCallRing();
+        }
+      }
+    }, 25000);
+    return () => clearInterval(eventInterval);
+  }, [activeEvent, isAudioEnabled]);
+
+  // Phone ring loop effect
+  useEffect(() => {
+    if (activeEvent === 'call' && isAudioEnabled) {
+      const ringTimer = setInterval(() => {
+        sounds.playCallRing();
+      }, 2200);
+      return () => clearInterval(ringTimer);
+    }
+  }, [activeEvent, isAudioEnabled]);
+
+  const handleJiraMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+    setIsDraggingJira(true);
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    setJiraDragStart({ x: clientX - jiraOffset.x, y: clientY - jiraOffset.y });
+  };
+
+  const handleJiraMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDraggingJira) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const newX = clientX - jiraDragStart.x;
+    const newY = clientY - jiraDragStart.y;
+    setJiraOffset({ x: newX, y: newY });
+
+    if (Math.abs(newX) > 120) {
+      setActiveEvent(null);
+      setIsDraggingJira(false);
+      setJiraOffset({ x: 0, y: 0 });
+      if (isAudioEnabled) sounds.playComboUp(4);
+    }
+  };
+
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const jiraCardRef = useRef<HTMLDivElement>(null);
+
+  const handleJiraMouseUp = () => {
+    if (!isDraggingJira) return;
+    setIsDraggingJira(false);
+
+    if (dropZoneRef.current && jiraCardRef.current) {
+      const jiraRect = jiraCardRef.current.getBoundingClientRect();
+      const dropRect = dropZoneRef.current.getBoundingClientRect();
+
+      const isOverlapping = !(
+        jiraRect.right < dropRect.left ||
+        jiraRect.left > dropRect.right ||
+        jiraRect.bottom < dropRect.top ||
+        jiraRect.top > dropRect.bottom
+      );
+
+      if (isOverlapping) {
+        setActiveEvent(null);
+        setJiraOffset({ x: 0, y: 0 });
+        if (isAudioEnabled) sounds.playComboUp(5);
+        const id = Date.now();
+        setFloatingItems(prev => [...prev, {
+          id, text: '✅ ТИКЕТ ПЕРЕВЕДЕН В ГОТОВО!', x: window.innerWidth / 2, y: window.innerHeight / 2 - 80,
+          scale: 1.4, color: '#22c55e', type: 'point'
+        }]);
+        setTimeout(() => setFloatingItems(prev => prev.filter(i => i.id !== id)), 1500);
+        return;
+      }
+    }
+
+    if (Math.abs(jiraOffset.x) < 80 && Math.abs(jiraOffset.y) < 80) {
+      setJiraOffset({ x: 0, y: 0 });
+    }
+  };
+
   const comboTimerRef = useRef<number | null>(null);
+  const decayIntervalRef = useRef<number | null>(null);
   const triggerShockwaveRef = useRef<((x?: number, y?: number, color?: string) => void) | null>(null);
 
   // Acceleration decay, automation & timers
@@ -133,6 +280,17 @@ export default function App() {
   }, [combo, isAudioEnabled]);
 
   const handleInteract = useCallback((e?: React.MouseEvent | React.TouchEvent | KeyboardEvent) => {
+    if (activeEvent === 'call') {
+      if (isAudioEnabled) sounds.playDrop();
+      const id = Date.now();
+      setFloatingItems(prev => [...prev, {
+        id, text: '📞 СНАЧАЛА ОТВЕТЬТЕ НА ЗВОНОК!', x: window.innerWidth / 2, y: window.innerHeight / 2 - 120,
+        scale: 1.3, color: '#ef4444', type: 'point'
+      }]);
+      setTimeout(() => setFloatingItems(prev => prev.filter(i => i.id !== id)), 1500);
+      return;
+    }
+
     const newCombo = combo + 1;
     const tier = getCurrentTier(newCombo);
     const prevTier = getCurrentTier(combo);
@@ -199,8 +357,32 @@ export default function App() {
       setFloatingItems((prev) => prev.filter((i) => i.id !== id && i.id !== id + 1));
     }, 1600);
 
-    if (comboTimerRef.current) window.clearTimeout(comboTimerRef.current);
-    comboTimerRef.current = window.setTimeout(resetCombo, COMBO_TIMEOUT);
+    if (comboTimerRef.current) {
+      window.clearTimeout(comboTimerRef.current);
+      comboTimerRef.current = null;
+    }
+    if (decayIntervalRef.current) {
+      window.clearInterval(decayIntervalRef.current);
+      decayIntervalRef.current = null;
+    }
+
+    comboTimerRef.current = window.setTimeout(() => {
+      if (isAudioEnabled) {
+        sounds.playDrop();
+      }
+      decayIntervalRef.current = window.setInterval(() => {
+        setCombo(prev => {
+          if (prev <= 1) {
+            if (decayIntervalRef.current) {
+              window.clearInterval(decayIntervalRef.current);
+              decayIntervalRef.current = null;
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 400);
+    }, 2500);
   }, [combo, maxCombo, acceleration, pizzaBoost, hasDiploma, employees, getCurrentTier, resetCombo, isAudioEnabled]);
 
   const hireEmployee = useCallback((type: EmployeeType) => {
@@ -282,8 +464,11 @@ export default function App() {
             <h1 className="app-title">STUDIO CLICKER</h1>
           </div>
           <div className="top-actions">
+            <button className={`icon-btn ${isShopOpen ? 'shop-active-btn' : ''}`} onClick={() => setIsShopOpen(!isShopOpen)}>
+              🛒 МАГАЗИН {isShopOpen ? '▲' : '▼'}
+            </button>
             <button className="icon-btn" onClick={() => setIsAudioEnabled(!isAudioEnabled)}>
-              {isAudioEnabled ? '🔊 ЗВУК ВКЛ' : '🔇 БЕЗ ЗВУКА'}
+              {isAudioEnabled ? '🔊 ЗВУК' : '🔇 ТИШИНА'}
             </button>
             <button className="icon-btn" onClick={() => { setLinesOfCode(0); setMoney(0); setEmployees({developer:0, analyst:0, backend:0, manager:0}); setHasDiploma(false); setPizzaBoost(0); setSysadminActive(false); }}>СБРОС</button>
           </div>
@@ -360,55 +545,110 @@ export default function App() {
       <main className="center-stage">
         <div className="game-layout">
           {/* Shop Switcher / Separate Shops */}
-          <div className="shops-container">
-            <div className="shop-tabs">
-              <button className={`shop-tab ${activeShop === 'staff' ? 'active' : ''}`} onClick={() => setActiveShop('staff')}>
-                👨‍💻 НАЙМ СОТРУДНИКОВ
-              </button>
-              <button className={`shop-tab ${activeShop === 'perks' ? 'active' : ''}`} onClick={() => setActiveShop('perks')}>
-                📜 ГРАМОТЫ И БОНУСЫ
-              </button>
-            </div>
+          {isShopOpen && (
+            <div className="shops-container animate-fade">
+              <div className="shop-top-header">
+                <span className="shop-main-title">🛍️ МАГАЗИН СТУДИИ</span>
+                <button className="icon-btn close-shop-btn" onClick={() => setIsShopOpen(false)}>✖ СВЕРНУТЬ</button>
+              </div>
+              <div className="shop-tabs">
+                <button className={`shop-tab ${activeShop === 'staff' ? 'active' : ''}`} onClick={() => setActiveShop('staff')}>
+                  👨‍💻 СОТРУДНИКИ
+                </button>
+                <button className={`shop-tab ${activeShop === 'perks' ? 'active' : ''}`} onClick={() => setActiveShop('perks')}>
+                  📜 БОНУСЫ
+                </button>
+              </div>
 
-            {activeShop === 'staff' ? (
-              <section className="shop-section staff-shop animate-fade">
-                <h3>КОМАНДА РАЗРАБОТКИ</h3>
-                {EMPLOYEES.map(emp => {
-                  const count = employees[emp.type];
-                  const cost = Math.floor(emp.baseCost * Math.pow(1.15, count));
-                  return (
-                    <button key={emp.type} className="shop-item" onClick={() => hireEmployee(emp.type)} disabled={money < cost}>
-                      <span className="shop-icon">{emp.icon}</span>
-                      <div className="shop-info">
-                        <span className="shop-label">{emp.label} (x{count})</span>
-                        <span className="shop-desc">{emp.description}</span>
-                        <span className="shop-cost">${cost.toLocaleString()}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </section>
-            ) : (
-              <section className="shop-section perks-shop animate-fade">
-                <h3>ГРАМОТЫ И МОТИВАЦИЯ</h3>
-                {PERKS.map(perk => {
-                  const isBought = perk.id === 'diploma' && hasDiploma;
-                  return (
-                    <button key={perk.id} className="shop-item" onClick={() => buyPerk(perk.id)} disabled={money < perk.baseCost || isBought}>
-                      <span className="shop-icon">{perk.icon}</span>
-                      <div className="shop-info">
-                        <span className="shop-label">{perk.label} {isBought && '(КУПЛЕНО)'}</span>
-                        <span className="shop-desc">{perk.description}</span>
-                        <span className="shop-cost">{perk.free ? 'БЕСПЛАТНО' : `$${perk.baseCost.toLocaleString()}`}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </section>
-            )}
-          </div>
+              {activeShop === 'staff' ? (
+                <section className="shop-section staff-shop animate-fade">
+                  <h3>КОМАНДА РАЗРАБОТКИ</h3>
+                  {EMPLOYEES.map(emp => {
+                    const count = employees[emp.type];
+                    const cost = Math.floor(emp.baseCost * Math.pow(1.15, count));
+                    return (
+                      <button key={emp.type} className="shop-item" onClick={() => hireEmployee(emp.type)} disabled={money < cost}>
+                        <span className="shop-icon">{emp.icon}</span>
+                        <div className="shop-info">
+                          <span className="shop-label">{emp.label} (x{count})</span>
+                          <span className="shop-desc">{emp.description}</span>
+                          <span className="shop-cost">${cost.toLocaleString()}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </section>
+              ) : (
+                <section className="shop-section perks-shop animate-fade">
+                  <h3>ГРАМОТЫ И МОТИВАЦИЯ</h3>
+                  {PERKS.map(perk => {
+                    const isBought = perk.id === 'diploma' && hasDiploma;
+                    return (
+                      <button key={perk.id} className="shop-item" onClick={() => buyPerk(perk.id)} disabled={money < perk.baseCost || isBought}>
+                        <span className="shop-icon">{perk.icon}</span>
+                        <div className="shop-info">
+                          <span className="shop-label">{perk.label} {isBought && '(КУПЛЕНО)'}</span>
+                          <span className="shop-desc">{perk.description}</span>
+                          <span className="shop-cost">{perk.free ? 'БЕСПЛАТНО' : `$${perk.baseCost.toLocaleString()}`}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </section>
+              )}
+            </div>
+          )}
 
           <div className="main-button-area">
+            {activeEvent === 'call' && (
+              <div className="event-popup call-popup animate-fade">
+                <div className="event-icon">{isCallTalking ? '🗣️' : '📞'}</div>
+                <div className="event-content">
+                  <span className="event-title">{isCallTalking ? 'ТИМЛИД ГОВОРИТ:' : 'ВХОДЯЩИЙ СОЗВОН!'}</span>
+                  <span className="event-desc">
+                    {isCallTalking 
+                      ? '«Добрый день коллеги! Надо немного ускориться! Всем хорошего дня!»' 
+                      : 'Идет созвон. Сначала ответьте на звонок, чтобы продолжить ускорение!'}
+                  </span>
+                  {!isCallTalking && (
+                    <button className="event-btn answer-btn" onClick={handleAnswerCall}>
+                      ☎️ ОТВЕТИТЬ
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeEvent === 'jira' && (
+              <>
+                <div className="jira-drop-zone-container">
+                  <div ref={dropZoneRef} className="jira-drop-zone">
+                    <span>📁 ГОТОВО</span>
+                  </div>
+                </div>
+                <div 
+                  ref={jiraCardRef}
+                  className="jira-card-overlay animate-fade"
+                  style={{ transform: `translate(${jiraOffset.x}px, ${jiraOffset.y}px)`, cursor: isDraggingJira ? 'grabbing' : 'grab' }}
+                  onMouseDown={handleJiraMouseDown}
+                  onMouseMove={handleJiraMouseMove}
+                  onMouseUp={handleJiraMouseUp}
+                  onMouseLeave={handleJiraMouseUp}
+                  onTouchStart={handleJiraMouseDown}
+                  onTouchMove={handleJiraMouseMove}
+                  onTouchEnd={handleJiraMouseUp}
+                >
+                  <div className="jira-header">
+                    <span className="jira-key">PROD-404 🔴 КРИТИЧЕСКИЙ БАГ</span>
+                  </div>
+                  <div className="jira-body">
+                    <p>«Перетащите эту карточку в зеленую зону "ГОТОВО", чтобы закрыть баг!»</p>
+                    <span className="jira-hint">👉 Зажмите и перетащите в зону "ГОТОВО" справа</span>
+                  </div>
+                </div>
+              </>
+            )}
+
             <AccelerationButton combo={combo} onClick={handleInteract} tierColor={currentTier.color} />
           </div>
         </div>
@@ -416,9 +656,23 @@ export default function App() {
 
       <footer className="hud-footer">
         <div className="keyboard-hint">
-          <span className="kbd">SPACE</span> ЧТОБЫ КОДИТЬ | <span className="kbd">ВЫПЛАТА ЗАРПЛАТЫ РАЗ В 30 СЕК</span>
+          <span className="kbd">SPACE</span> ЧТОБЫ УСКОРЯТЬ | <span className="kbd">ВЫПЛАТА ЗАРПЛАТЫ РАЗ В 30 СЕК</span>
         </div>
         <div className="tier-indicator">
+          <button 
+            className="transparent-test-btn" 
+            title="Тест случайного ивента"
+            onClick={() => {
+              if (!activeEvent) {
+                const ev: ActiveEvent = Math.random() < 0.5 ? 'call' : 'jira';
+                setActiveEvent(ev);
+                setJiraOffset({ x: 0, y: 0 });
+                if (ev === 'call' && isAudioEnabled) sounds.playCallRing();
+              }
+            }}
+          >
+            🧪 [ТЕСТ ИВЕНТА]
+          </button>
           {TIERS.map((t, i) => (
             <div key={i} className="tier-dot" style={{ backgroundColor: combo >= (i === 0 ? 0 : i === 1 ? 3 : i === 2 ? 8 : i === 3 ? 15 : i === 4 ? 25 : 40) ? t.color : '#2d2d3d', color: t.color }} />
           ))}

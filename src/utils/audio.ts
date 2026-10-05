@@ -106,6 +106,36 @@ class SoundManager {
       // Ignored
     }
   }
+
+  public playCallRing() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+      [0, 0.15, 0.4, 0.55].forEach((delay, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const t = now + delay;
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(idx % 2 === 0 ? 440 : 480, t);
+        
+        gain.gain.setValueAtTime(0.12, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(t);
+        osc.stop(t + 0.1);
+      });
+    } catch {
+      // Ignored
+    }
+  }
 }
 
 export const sounds = new SoundManager();
