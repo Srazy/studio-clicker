@@ -812,6 +812,79 @@
   to { box-shadow: 0 0 35px rgba(239, 68, 68, 0.8); }
 }
 
+.event-popup.release-popup {
+  position: absolute;
+  bottom: calc(100% + 20px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.98);
+  border: 2px solid #00f0ff;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 180;
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+  width: 310px;
+  animation: pulseRelease 1.5s infinite alternate;
+}
+
+@keyframes pulseRelease {
+  from { box-shadow: 0 0 15px rgba(0, 240, 255, 0.2); }
+  to { box-shadow: 0 0 35px rgba(0, 240, 255, 0.7); }
+}
+
+.release-code-badge {
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px dashed #00f0ff;
+  color: #00f0ff;
+  font-family: monospace;
+  font-size: 15px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: center;
+  letter-spacing: 2px;
+  margin: 6px 0;
+  user-select: all;
+}
+
+.release-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.release-input {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #ffffff;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.release-input:focus {
+  border-color: #00f0ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+.release-submit-btn {
+  background: #00f0ff;
+  color: #0b0f19;
+  margin-top: 0;
+}
+
+.release-submit-btn:hover {
+  background: #38bdf8;
+  transform: scale(1.05);
+}
+
 .jira-drop-zone-container {
   position: absolute;
   right: -130px;

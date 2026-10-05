@@ -291,6 +291,17 @@ export default function App() {
       return;
     }
 
+    if (activeEvent === 'release') {
+      if (isAudioEnabled) sounds.playDrop();
+      const id = Date.now();
+      setFloatingItems(prev => [...prev, {
+        id, text: '📦 СНАЧАЛА СОБЕРИТЕ РЕЛИЗ!', x: window.innerWidth / 2, y: window.innerHeight / 2 - 120,
+        scale: 1.3, color: '#ef4444', type: 'point'
+      }]);
+      setTimeout(() => setFloatingItems(prev => prev.filter(i => i.id !== id)), 1500);
+      return;
+    }
+
     const newCombo = combo + 1;
     const tier = getCurrentTier(newCombo);
     const prevTier = getCurrentTier(combo);
@@ -445,11 +456,14 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (activeEvent === 'release' && (e.target as HTMLElement).tagName === 'INPUT') {
+        return;
+      }
       if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) handleInteract(e);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [combo, handleInteract]);
+  }, [combo, handleInteract, activeEvent]);
 
   return (
     <div className="clicker-app">
@@ -649,6 +663,30 @@ export default function App() {
               </>
             )}
 
+            {activeEvent === 'release' && (
+              <div className="event-popup release-popup animate-fade">
+                <div className="event-icon">📦</div>
+                <div className="event-content">
+                  <span className="event-title">СБОРКА РЕЛИЗА</span>
+                  <span className="event-desc">Введите капчу для деплоя на продакшн:</span>
+                  <div className="release-code-badge">{releaseCode}</div>
+                  <form onSubmit={handleDeployRelease} className="release-form">
+                    <input 
+                      type="text" 
+                      className="release-input" 
+                      value={userReleaseInput} 
+                      onChange={e => setUserReleaseInput(e.target.value)} 
+                      placeholder="Введите код..." 
+                      autoFocus 
+                    />
+                    <button type="submit" className="event-btn release-submit-btn">
+                      🚀 Релиз
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
             <AccelerationButton combo={combo} onClick={handleInteract} tierColor={currentTier.color} />
           </div>
         </div>
@@ -664,9 +702,18 @@ export default function App() {
             title="Тест случайного ивента"
             onClick={() => {
               if (!activeEvent) {
-                const ev: ActiveEvent = Math.random() < 0.5 ? 'call' : 'jira';
+                const events: ActiveEvent[] = ['call', 'jira', 'release'];
+                const ev = events[Math.floor(Math.random() * events.length)];
                 setActiveEvent(ev);
                 setJiraOffset({ x: 0, y: 0 });
+                if (ev === 'release') {
+                  const major = Math.floor(Math.random() * 3) + 1;
+                  const minor = Math.floor(Math.random() * 9);
+                  const suffix = ['ar', 'rc', 'beta', 'patch'][Math.floor(Math.random() * 4)];
+                  const patch = Math.floor(Math.random() * 9) + 1;
+                  setReleaseCode(`${major}.${minor}.${suffix}.${patch}`);
+                  setUserReleaseInput('');
+                }
                 if (ev === 'call' && isAudioEnabled) sounds.playCallRing();
               }
             }}
